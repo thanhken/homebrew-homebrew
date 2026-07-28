@@ -3,7 +3,7 @@ class Crossy < Formula
   homepage "https://iamken.work"
   url "https://github.com/thanhken/homebrew-homebrew/releases/download/crossy-v1.0.0/crossy"
   version "1.0.0"
-  sha256 "09d2559ae8182ed0b3d96a018b8cee76e176c144a88354a4bf711e2b968c08b1"
+  sha256 "dbcbc592094fb7280ba9af68dce274b656bcad008c7d76d379513ca59917c276"
 
   def install
     bin.install "crossy"
