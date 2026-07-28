@@ -1,0 +1,143 @@
+#!/bin/bash
+#
+# crossy — ghi thời điểm chạy hiện tại vào một field trong file plist.
+#
+# Không có CLI, không có tham số: cứ chạy là làm một việc duy nhất.
+# File plist chưa tồn tại thì tự tạo; đã tồn tại thì giữ nguyên mọi key khác,
+# chỉ cập nhật đúng field được cấu hình.
+#
+# Cấu hình: ~/.config/crossy/config (tự sinh ở lần chạy đầu tiên)
+#
+set -euo pipefail
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/crossy"
+CONFIG_FILE="$CONFIG_DIR/config"
+
+die() {
+	printf 'crossy: %s\n' "$1" >&2
+	exit 1
+}
+
+# File tạm phải là biến toàn cục: trap EXIT chạy sau khi hàm đã kết thúc, lúc đó
+# biến `local` không còn tồn tại và `set -u` sẽ làm script thoát với mã lỗi.
+TMP=""
+trap 'rm -f "${TMP:-}"' EXIT
+
+# Lần chạy đầu tiên: sinh sẵn file config kèm chú thích, để người dùng biết chỗ mà sửa.
+# Đây cũng là nơi duy nhất định nghĩa giá trị mặc định.
+if [[ ! -f "$CONFIG_FILE" ]]; then
+	mkdir -p "$CONFIG_DIR"
+	cat >"$CONFIG_FILE" <<'EOF'
+# Cấu hình crossy. Đây là file shell, sửa xong không cần restart service.
+
+# 1. Đường dẫn tới file plist cần ghi.
+#    Dùng $HOME thay vì gõ cứng /Users/<tên-user> để config chạy được trên mọi máy.
+PLIST="$HOME/Library/Preferences/com.codeweavers.CrossOver.plist"
+
+# 2. Tên key cần cập nhật.
+#    Key lồng nhau ngăn cách bằng dấu chấm ("Muc.Con"), nhưng CHỈ dùng được khi
+#    plist nằm ngoài Preferences/ — `defaults` không hỗ trợ key lồng nhau.
+KEY="FirstRunDate"
+
+# Kiểu dữ liệu của key: date | string | integer | bool | float
+TYPE="date"
+
+# Format thời gian, là tham số truyền cho lệnh `date`.
+# CHỈ có tác dụng khi TYPE="string". Với TYPE="date" thì crossy luôn ghi mốc UTC
+# chuẩn ISO 8601, vì đó là dạng duy nhất mà cả `defaults` lẫn `plutil` đọc đúng.
+FORMAT="%Y-%m-%dT%H:%M:%S%z"
+EOF
+	printf 'Đã tạo config mặc định: %s\n' "$CONFIG_FILE"
+fi
+
+# shellcheck source=/dev/null
+source "$CONFIG_FILE"
+
+# Thiếu hai giá trị này thì không đoán bừa — báo lỗi rõ ràng và dừng.
+: "${PLIST:?chưa đặt PLIST trong $CONFIG_FILE}"
+: "${KEY:?chưa đặt KEY trong $CONFIG_FILE}"
+TYPE="${TYPE:-date}"
+FORMAT="${FORMAT:-%Y-%m-%dT%H:%M:%S%z}"
+
+# Hai công cụ ghi plist đặt tên cờ kiểu dữ liệu khác nhau ở mỗi số nguyên.
+case "$TYPE" in
+date) DEFAULTS_FLAG="-date" PLUTIL_FLAG="-date" ;;
+string) DEFAULTS_FLAG="-string" PLUTIL_FLAG="-string" ;;
+integer | int) DEFAULTS_FLAG="-int" PLUTIL_FLAG="-integer" ;;
+bool | boolean) DEFAULTS_FLAG="-bool" PLUTIL_FLAG="-bool" ;;
+float) DEFAULTS_FLAG="-float" PLUTIL_FLAG="-float" ;;
+*) die "TYPE không hợp lệ: $TYPE" ;;
+esac
+
+if [[ "$TYPE" == "date" ]]; then
+	# `defaults -date` bỏ qua offset múi giờ và diễn giải phần số như thể là UTC:
+	# truyền "2026-07-28T23:00:00+0700" sẽ ra năm 0700, sai hoàn toàn mà không báo lỗi.
+	# Nên với kiểu date luôn sinh mốc UTC dạng ISO 8601 và bỏ qua FORMAT.
+	VALUE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+else
+	VALUE="$(date +"$FORMAT")"
+fi
+
+PREF_DIR="$HOME/Library/Preferences"
+
+# Ghi qua `defaults`, dành cho plist nằm trong ~/Library/Preferences/.
+# Bắt buộc phải đi đường này: cfprefsd giữ bản cache trong RAM và sẽ ghi đè lại
+# file nếu ta sửa trực tiếp trên đĩa, khiến thay đổi biến mất một cách im lặng.
+write_via_defaults() {
+	[[ "$KEY" == *.* ]] &&
+		die "key lồng nhau ('$KEY') không dùng được với plist trong Preferences/"
+
+	defaults write "$(basename "$PLIST" .plist)" "$KEY" "$DEFAULTS_FLAG" "$VALUE"
+}
+
+# Ghi qua `plutil`, dành cho plist thường (Application Support, config của app...).
+# Dùng plutil chứ không phải PlistBuddy vì PlistBuddy từ chối hầu hết format ngày
+# mà vẫn thoát với mã 0 — hỏng âm thầm. plutil thoát khác 0 khi giá trị không hợp lệ.
+write_via_plutil() {
+	TMP="$PLIST.crossy.$$"
+
+	mkdir -p "$(dirname "$PLIST")"
+
+	# Thao tác trên bản tạm đặt cùng thư mục với plist gốc: cùng filesystem nên `mv`
+	# là atomic, plist gốc không bao giờ rơi vào trạng thái hỏng dở giữa chừng.
+	if [[ -f "$PLIST" ]]; then
+		cp "$PLIST" "$TMP"
+	else
+		plutil -create xml1 "$TMP"
+	fi
+
+	# plutil từ chối ghi vào "Muc.Con" nếu dict cha "Muc" chưa tồn tại, nên phải
+	# tạo sẵn từng cấp trung gian. Cấp nào đã có thì để nguyên, không đụng vào.
+	local prefix="" part
+	local -a parts
+	IFS='.' read -ra parts <<<"$KEY"
+	for part in "${parts[@]::${#parts[@]}-1}"; do
+		prefix="${prefix:+$prefix.}$part"
+		plutil -extract "$prefix" raw -o /dev/null "$TMP" >/dev/null 2>&1 ||
+			plutil -replace "$prefix" -dictionary "$TMP"
+	done
+
+	# -replace vừa sửa key sẵn có vừa tạo key chưa tồn tại, không cần hai nhánh.
+	plutil -replace "$KEY" "$PLUTIL_FLAG" "$VALUE" "$TMP"
+	plutil -lint "$TMP" >/dev/null
+	mv "$TMP" "$PLIST"
+}
+
+case "$PLIST" in
+"$PREF_DIR"/ByHost/*)
+	# Tên file ByHost có kèm UUID phần cứng và cần `defaults -currentHost`.
+	die "plist ByHost chưa được hỗ trợ: $PLIST"
+	;;
+"$PREF_DIR"/*.plist)
+	write_via_defaults
+	;;
+/Library/Preferences/*)
+	# Plist cấp hệ thống thuộc root, cần LaunchDaemon chạy bằng sudo thay vì LaunchAgent.
+	die "plist cấp hệ thống cần quyền root, crossy chỉ chạy ở phạm vi user: $PLIST"
+	;;
+*)
+	write_via_plutil
+	;;
+esac
+
+printf '[%s] %s :%s = %s\n' "$(date '+%F %T')" "$PLIST" "$KEY" "$VALUE"
