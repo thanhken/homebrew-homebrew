@@ -1,21 +1,13 @@
 class Crossy < Formula
   desc "Ghi thời điểm chạy hiện tại vào một field trong file plist, tự động mỗi ngày"
   homepage "https://iamken.work"
-  url "https://github.com/thanhken/homebrew-homebrew/releases/download/crossy-v1.0.0/crossy"
-  version "1.0.0"
-  sha256 "dbcbc592094fb7280ba9af68dce274b656bcad008c7d76d379513ca59917c276"
+  url "https://github.com/thanhken/homebrew-homebrew/releases/download/crossy-v1.0.1/crossy"
+  version "1.0.1"
+  sha256 "7c4945208fe5271bac48a3ad9a90ecdf544cf04cbb2473eedd7fe93228a025a2"
 
   def install
     bin.install "crossy"
     (bin/"crossy").chmod 0755
-  end
-
-  # Chạy ngay một lần lúc cài để sinh config mặc định, kể cả khi người dùng
-  # chưa bật service. Thao tác idempotent nên chạy thừa không sao.
-  def post_install
-    system opt_bin/"crossy"
-  rescue
-    nil
   end
 
   service do
@@ -32,14 +24,13 @@ class Crossy < Formula
 
   def caveats
     <<~EOS
-      Cấu hình (đường dẫn plist + tên key):
-        ~/.config/crossy/config
+      1. Chạy `crossy` một lần để sinh file cấu hình (lần này chưa ghi gì cả)
 
-      Bật chạy tự động (mỗi lần login + mỗi 24h):
-        brew services start crossy
+      2. Sửa đường dẫn plist và tên key trong:
+           ~/.config/crossy/config
 
-      Chạy tay bất cứ lúc nào:
-        crossy
+      3. Bật chạy tự động (mỗi lần login + mỗi 24h):
+           brew services start crossy
     EOS
   end
 

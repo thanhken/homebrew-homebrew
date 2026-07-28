@@ -25,6 +25,8 @@ Không có CLI, không có tham số — chạy là làm.
 
 ```bash
 brew install thanhken/homebrew/crossy
+crossy                        # sinh file cấu hình, chưa ghi gì cả
+# sửa ~/.config/crossy/config
 brew services start crossy
 ```
 
@@ -32,7 +34,7 @@ Service chạy ngay lúc start, lặp lại mỗi lần login và mỗi 24 giờ
 
 ### Cấu hình
 
-Toàn bộ cấu hình nằm trong một file, tự sinh ở lần chạy đầu tiên:
+Toàn bộ cấu hình nằm trong một file, tự sinh ở lần chạy đầu tiên. Lần chạy đó crossy dừng ngay sau khi tạo file — giá trị mặc định chỉ là placeholder, ghi tiếp sẽ đẻ ra plist rác.
 
 ```
 ~/.config/crossy/config

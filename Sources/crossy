@@ -32,7 +32,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
 
 # 1. Đường dẫn tới file plist cần ghi.
 #    Dùng $HOME thay vì gõ cứng /Users/<tên-user> để config chạy được trên mọi máy.
-PLIST="$HOME/Library/Preferences/com.codeweavers.CrossOver.plist"
+PLIST="$HOME/Library/Preferences/com.example.app.plist"
 
 # 2. Tên key cần cập nhật.
 #    Key lồng nhau ngăn cách bằng dấu chấm ("Muc.Con"), nhưng CHỈ dùng được khi
@@ -47,7 +47,11 @@ TYPE="date"
 # chuẩn ISO 8601, vì đó là dạng duy nhất mà cả `defaults` lẫn `plutil` đọc đúng.
 FORMAT="%Y-%m-%dT%H:%M:%S%z"
 EOF
+	# Dừng ngay sau khi sinh config: giá trị mặc định chỉ là placeholder, chạy tiếp
+	# sẽ đẻ ra một file plist rác mang tên com.example.app trong Preferences/.
 	printf 'Đã tạo config mặc định: %s\n' "$CONFIG_FILE"
+	printf 'Sửa PLIST và KEY trong đó rồi chạy lại. Lần này chưa ghi gì cả.\n'
+	exit 0
 fi
 
 # shellcheck source=/dev/null
